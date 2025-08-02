@@ -53,7 +53,7 @@ You are responsible for securing the endpoint (e.g., IP whitelisting, firewall, 
 
 ## 🪪 License
 
-MIT License — See [LICENSE](./LICENSE)
+MIT License — See [LICENSE](./LICENSE.md)
 
 ### 🔖 Acknowledgements & Origin Reference
 

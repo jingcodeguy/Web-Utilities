@@ -56,7 +56,7 @@ curl "https://example.com/tools/clear.php?token=xxxxx&url=https://target.com/pag
 
 ## 📄 授權方式
 
-請見本目錄下之 `LICENSE` 文件。
+請見本目錄下之 [LICENSE](LICENSE.md) 文件。
 
 ### 🔖 致謝與來源說明
 
