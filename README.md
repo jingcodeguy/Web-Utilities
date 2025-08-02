@@ -1,5 +1,7 @@
 # Web Utils
 
+[繁體中文版本](./README.zh.md)
+
 A collection of lightweight tools for web development and maintenance.
 
 ### Currently available:
@@ -14,9 +16,7 @@ A utility to flush SiteGround's dynamic cache using their internal Unix socket A
 
 Each subfolder may have its own license depending on the tool.
 
-📄 See [LICENSE]() and each subfolder's license for more info.
-
-📘 This document is also available in: [中文版本](./README.zh.md)
+📄 See [LICENSE](./LICENSE) and each subfolder's license for more info.
 
 ### LICENSE (master)
 

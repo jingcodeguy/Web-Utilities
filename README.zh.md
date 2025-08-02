@@ -1,6 +1,6 @@
-### README.zh.md (中文)
-
 # Web 工具包（Web Utils）
+
+[English](./README.md)
 
 這是一個收錄各類輕量級 Web 開發與維護小工具的集合。
 
@@ -16,6 +16,4 @@
 
 ***
 
-📄 授權方式請參考本資料夾下 LICENSE 文件與各工具子目錄之說明。
-
-📘 本文件亦提供英文版： [English Version](./README.md)
+📄 授權方式請參考本資料夾下 [LICENSE](./LICENSE) 文件與各工具子目錄之說明。
