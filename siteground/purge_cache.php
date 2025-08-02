@@ -1,9 +1,11 @@
 <?php
+
 /**
  * Simple dynamic cache clearing tool for SiteGround servers.
  *
  * Based on the core logic of the Speed Optimizer WordPress plugin (by SiteGround) and WordPress Core API,
  * but rewritten as a minimal standalone version without UI or WP dependencies.
+ * For non-WordPress environments and internal use only.
  *
  * 本工具參考自 SiteGround Speed Optimizer 插件及的核心清除快取邏輯 WordPress 核心相關 API，
  * 並以獨立方式簡化重寫，無需依賴 WordPress 環境，可直接使用。
@@ -11,184 +13,127 @@
  * For personal or internal use. Not affiliated with or endorsed by SiteGround.
  */
 
-# Must run in siteground hosting.
-const SITE_TOOLS_SOCK_FILE = '/chroot/tmp/site-tools.sock';
+# Avoid Siteground agressive dyanmic cache.
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
 
-function wp_json_encode( $value, $flags = 0, $depth = 512 ) {
-	$json = json_encode( $value, $flags, $depth );
+define('FLUSH_SECRET_TOKEN', "YOUR-OWN-API-KEY"); // ✅ 你自訂的安全 token
 
-	// If json_encode() was successful, no need to do more confidence checking.
-	if ( false !== $json ) {
-		return $json;
-	}
+// 驗證 token：支援 query, POST 或 Authorization header
+function get_request_token()
+{
+    // 支援 GET / POST
+    if (!empty($_GET['token'])) return $_GET['token'];
+    if (!empty($_POST['token'])) return $_POST['token'];
 
-	return json_encode( $value, $flags, $depth );
+    // 支援 Authorization: Bearer xxx
+    $headers = getallheaders();
+
+    $auth = null;
+
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (isset($headers['Authorization'])) {
+            $auth = $headers['Authorization'];
+        } elseif (isset($headers['authorization'])) { // 某些環境會變小寫
+            $auth = $headers['authorization'];
+        }
+    }
+
+    // Nginx / FPM / CLI server fallback
+    if (!$auth && isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $auth = $_SERVER['HTTP_AUTHORIZATION'];
+    }
+
+    if (!$auth && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $auth = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    }
+
+    if (stripos($auth, 'Bearer ') === 0) {
+        return trim(substr($auth, 7)); // 直接抽取 Bearer 後面內容
+    }
+
+    return null;
 }
 
-
-function _wp_translate_php_url_constant_to_key( $constant ) {
-	$translation = array(
-		PHP_URL_SCHEME   => 'scheme',
-		PHP_URL_HOST     => 'host',
-		PHP_URL_PORT     => 'port',
-		PHP_URL_USER     => 'user',
-		PHP_URL_PASS     => 'pass',
-		PHP_URL_PATH     => 'path',
-		PHP_URL_QUERY    => 'query',
-		PHP_URL_FRAGMENT => 'fragment',
-	);
-
-	if ( isset( $translation[ $constant ] ) ) {
-		return $translation[ $constant ];
-	} else {
-		return false;
-	}
+// 驗證 token
+$token = get_request_token();
+if ($token !== FLUSH_SECRET_TOKEN) {
+    http_response_code(403);
+    echo "Access denied: invalid token.";
+    exit;
 }
 
-function _get_component_from_parsed_url_array( $url_parts, $component = -1 ) {
-	if ( -1 === $component ) {
-		return $url_parts;
-	}
+// ===== Flush logic 開始 =====
 
-	$key = _wp_translate_php_url_constant_to_key( $component );
+function flush_dynamic_cache($url)
+{
+    $host = parse_url($url, PHP_URL_HOST);
+    if (!$host) return false;
+    $hostname = str_replace('www.', '', $host);
 
-	if ( false !== $key && is_array( $url_parts ) && isset( $url_parts[ $key ] ) ) {
-		return $url_parts[ $key ];
-	} else {
-		return null;
-	}
-}
+    $main_path = parse_url($url, PHP_URL_PATH) ?? '/';
+    if (empty($main_path)) $main_path = '/';
 
-function wp_parse_url( $url, $component = -1 ) {
-	$to_unset = array();
-	$url      = (string) $url;
+    $sock_path = '/chroot/tmp/site-tools.sock';
+    $fp = stream_socket_client('unix://' . $sock_path, $errno, $errstr, 5);
+    if ($fp === false) {
+        return "Socket connection failed: $errstr ($errno)";
+    }
 
-	if ( str_starts_with( $url, '//' ) ) {
-		$to_unset[] = 'scheme';
-		$url        = 'placeholder:' . $url;
-	} elseif ( str_starts_with( $url, '/' ) ) {
-		$to_unset[] = 'scheme';
-		$to_unset[] = 'host';
-		$url        = 'placeholder://placeholder' . $url;
-	}
-
-	$parts = parse_url( $url );
-
-	if ( false === $parts ) {
-		// Parsing failure.
-		return $parts;
-	}
-
-	// Remove the placeholder values.
-	foreach ( $to_unset as $key ) {
-		unset( $parts[ $key ] );
-	}
-
-	return _get_component_from_parsed_url_array( $parts, $component );
-}
-
-
-function flush_dynamic_cache( $hostname, $main_path, $url ) {
-    // Build the request params.
-    $args = array(
+    $request = [
         'api'      => 'domain-all',
         'cmd'      => 'update',
-        'settings' => array( 'json' => 1 ),
-        'params'   => array(
+        'params'   => [
             'flush_cache' => '1',
             'id'          => $hostname,
             'path'        => $main_path,
-        ),
-    );
+        ],
+        'settings' => ['json' => 1],
+    ];
 
-    $site_tools_result = call_site_tools_client( $args, true );
+    fwrite($fp, json_encode($request) . "\n");
+    $response = fgets($fp, 32 * 1024);
+    fclose($fp);
 
-    if ( false === $site_tools_result ) {
-        return false;
-    }
-
-    if ( isset( $site_tools_result['err_code'] ) ) {
-        error_log( 'There was an issue purging the cache for this URL: ' . $url . '. Error code: ' . $site_tools_result['err_code'] . '. Message: ' . $site_tools_result['message'] . '.' );
-        return false;
-    }
-
-    return true;
+    return $response ?: 'No response received';
 }
 
-function call_site_tools_client( $args, $json_object = false ) {
-    file_put_contents( './site-tools.log', "call_site_tools_client" . "\n", FILE_APPEND );
+// 獲取自定義網址，僅適用於同域名及其子域名
+// Get custom URL (works for same domain and subdomains only)
+$url = $_GET['url'] ?? null;
 
-    // Bail if the socket does not exists.
-    if ( ! file_exists( SITE_TOOLS_SOCK_FILE ) ) {
-        return false;
-    }
-
-    // Bail if no arguments present.
-    if ( empty( $args ) ) {
-        return false;
-    }
-
-    // Open unix socket connection.
-    $fp = stream_socket_client( 'unix://' . SITE_TOOLS_SOCK_FILE, $errno, $errstr, 5 );
-
-    // Bail if the connection fails.
-    if ( false === $fp ) {
-        return false;
-    }
-
-    // Build the request params.
-    $request = array(
-        'api'      => $args['api'],
-        'cmd'      => $args['cmd'],
-        'params'   => $args['params'],
-        'settings' => $args['settings'],
-    );
-
-    file_put_contents( './site-tools.log', wp_json_encode($request) . "\n", FILE_APPEND );
-
-    // Generate the json_encode flags based on passed variable.
-    $flags = ( false === $json_object ) ? 0 : JSON_FORCE_OBJECT;
-
-    // Sent the params to the Unix socket.
-    fwrite( $fp, wp_json_encode( $request, $flags ) . "\n" );
-
-    // Fetch the response.
-    $response = fgets( $fp, 32 * 1024 );
-
-    // Close the connection.
-    fclose( $fp );
-
-    // Decode the response.
-    $result = @json_decode( $response, true );
-    file_put_contents( './site-tools.log', wp_json_encode($result). "\n", FILE_APPEND );
-
-    if ( false === $result || isset( $result['err_code'] ) ) {
-        return false;
-    }
-
-    return $result;
+if (!$url) {
+    // Fallback 取得當前網址
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $uri    = $_SERVER['REQUEST_URI'] ?? '/';
+    $url    = $scheme . '://' . $host . $uri;
 }
 
-function get_home_url($url) {
-    $parsed_url = parse_url($url);
+// 執行 flush
+$result = flush_dynamic_cache($url);
 
-    if (!$parsed_url || !isset($parsed_url['host'])) {
-        return false; // 無效 URL
-    }
+// 寫入 log
+$log_line = sprintf(
+    "[%s] Host: %s | Path: %s | Result: %s\n",
+    date('Y-m-d H:i:s'),
+    $host,
+    $uri,
+    trim($result)
+);
 
-    // 組合 Home URL
-    $home_url = $parsed_url['scheme'] . '://' . $parsed_url['host'];
+$log_file = __DIR__ . '/flush.log';
+$max_log_size = 500 * 1024; // 500 KB
 
-    // 如果有 Port，加入 Port
-    if (isset($parsed_url['port'])) {
-        $home_url .= ':' . $parsed_url['port'];
-    }
-
-    return $home_url;
+// Reset if log file is > default 500k.
+if (file_exists($log_file) && filesize($log_file) > $max_log_size) {
+    $lines = file($log_file);
+    $last_lines = array_slice($lines, -100);
+    file_put_contents($log_file, "=== flush.log rotated at " . date('Y-m-d H:i:s') . " ===\n" . implode('', $last_lines));
 }
+file_put_contents($log_file, $log_line, FILE_APPEND);
 
-$url = isset($_GET['url']) ? trim($_GET['url'], " \t\n\r\0\x0B\"") : 'https://example.com';
-$home = get_home_url($url);
-$main_path = wp_parse_url($url, PHP_URL_PATH) ? wp_parse_url($url, PHP_URL_PATH) : "/";
-$hostname   = str_replace( 'www.', '', wp_parse_url( $home, PHP_URL_HOST ) );
-flush_dynamic_cache($hostname, $main_path, $url);
+// 顯示結果
+echo "<pre>Flush result:\n$log_line</pre>";
