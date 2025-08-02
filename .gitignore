@@ -1,0 +1,21 @@
+# System related files
+.DS_Store
+Thumbs.db
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Sync files
+.sync.ffs_db
+
+# logs
+*.log
+flush.log
+
+# cache or runtime files etc.
+cache/
+tmp/
+*.cache
