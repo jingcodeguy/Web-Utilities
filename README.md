@@ -16,7 +16,7 @@ A utility to flush SiteGround's dynamic cache using their internal Unix socket A
 
 Each subfolder may have its own license depending on the tool.
 
-📄 See [LICENSE](./LICENSE) and each subfolder's license for more info.
+📄 See [LICENSE](./LICENSE.md) and each subfolder's license for more info.
 
 ### LICENSE (master)
 
