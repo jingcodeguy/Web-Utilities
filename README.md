@@ -1,6 +1,6 @@
 # Web Utils
 
-[繁體中文版本](./README.zh.md)
+[繁體中文](./README.zh.md)
 
 A collection of lightweight tools for web development and maintenance.
 
